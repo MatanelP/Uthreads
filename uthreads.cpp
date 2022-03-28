@@ -68,7 +68,6 @@ int uthread_spawn (thread_entry_point entry_point)
 {
   int nextAvailableId = 0;// getNextId();
   auto *newThread = new thread (nextAvailableId, entry_point);
-  newThread->run();
 
   return nextAvailableId;
 }
