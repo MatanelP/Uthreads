@@ -3,6 +3,7 @@
 //
 #include "uthreads.h"
 #include <set>
+#include <map>
 #include <list>
 #include <numeric>
 #include <iostream>
@@ -31,6 +32,16 @@ class thread {
     return _id;
   }
 
+  state get_state() const
+  {
+      return _curr_state;
+  }
+
+  void set_state(state state_)
+  {
+      _curr_state = state_;
+  }
+
   void run ()
   {
     _entry_point ();
@@ -52,7 +63,9 @@ int getNextId ();
 int quantum;
 int nextAvailableId;
 set<int> available_ids;
-list<thread *> threads_list;
+list<thread *> ready_threads_list;
+list<thread *> blocked_threads_list;
+map<int,thread *> all_threads;
 
 int uthread_init (int quantum_usecs)
 {
@@ -79,7 +92,9 @@ int uthread_spawn (thread_entry_point entry_point)
 {
   int next_available_id = getNextId ();
   if (next_available_id == -1) return -1;
-  threads_list.push_back (new thread (next_available_id, entry_point));
+  thread* spawned_thread = new thread (next_available_id, entry_point);
+  ready_threads_list.push_back (spawned_thread);
+  all_threads[next_available_id] = spawned_thread;
   //todo1
 
   return next_available_id;
@@ -88,6 +103,21 @@ int uthread_spawn (thread_entry_point entry_point)
 int getNextId ()
 {
   return !available_ids.empty () ? *available_ids.begin() : -1;
+}
+
+bool is_valid_id(int tid){
+
+    if (tid <= 0 || tid > MAX_THREAD_NUM - 1){
+        return false;
+    }
+
+
+    if (available_ids.find(tid) != available_ids.end()){
+        return false;
+    }
+
+    return true;
+
 }
 
 /**
@@ -117,10 +147,18 @@ int uthread_terminate (int tid)
 */
 int uthread_block (int tid)
 {
-
-    if (tid <= 0 || tid > MAX_THREAD_NUM - 1){
+    if (!is_valid_id(tid)){
         return -1;
     }
+
+    auto it = all_threads.find(tid);
+    thread* curr_thread = it->second;
+    if (curr_thread->get_state() != BLOCKED){
+        curr_thread->set_state(BLOCKED);
+        //todo scheduling decision?
+    }
+
+    return 0;
 
 }
 
