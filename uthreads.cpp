@@ -25,12 +25,14 @@ class thread {
     return _id;
   }
 
-  void run(){
-    _entry_point();
+  void run ()
+  {
+    _entry_point ();
   }
 
 } typedef thread;
 
+int getNextId ();
 /**
  * @brief initializes the thread library.
  *
@@ -66,10 +68,16 @@ int uthread_init (int quantum_usecs)
 */
 int uthread_spawn (thread_entry_point entry_point)
 {
-  int nextAvailableId = 0;// getNextId();
+  int nextAvailableId = getNextId ();
+  if (nextAvailableId == -1) return -1;
   auto *newThread = new thread (nextAvailableId, entry_point);
 
   return nextAvailableId;
+}
+
+int getNextId ()
+{
+  return !idVector.empty () ? idVector.at (0) : -1;
 }
 
 /**
