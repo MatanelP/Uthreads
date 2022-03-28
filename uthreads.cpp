@@ -9,11 +9,14 @@
 
 using namespace std;
 
+enum state{RUNNING,BLOCKED, READY};
+
 class thread {
  private:
 
   int _id;
   thread_entry_point _entry_point;
+  state _curr_state;
 
  public:
 
@@ -21,6 +24,7 @@ class thread {
   {
     _id = id;
     _entry_point = entry_point;
+    _curr_state = state(READY);
   }
   int get_id () const
   {
@@ -113,6 +117,10 @@ int uthread_terminate (int tid)
 */
 int uthread_block (int tid)
 {
+
+    if (tid <= 0 || tid > MAX_THREAD_NUM - 1){
+        return -1;
+    }
 
 }
 
