@@ -2,6 +2,28 @@
 // Created by Matanel on 28/03/2022.
 //
 #include "uthreads.h"
+#include <vector>
+
+using namespace std;
+
+class thread {
+ private:
+
+  int _id;
+
+ public:
+
+  explicit thread (int id)
+  {
+    _id = id;
+  }
+  int get_id () const
+  {
+    return _id;
+  }
+
+} typedef thread;
+
 /**
  * @brief initializes the thread library.
  *
@@ -12,7 +34,20 @@
  *
  * @return On success, return 0. On failure, return -1.
 */
-int uthread_init (int quantum_usecs);
+
+int quantum;
+int nextAvailableId;
+vector<int> idVector;
+
+int uthread_init (int quantum_usecs)
+{
+  if (quantum_usecs <= 0) return -1;
+  quantum = quantum_usecs;
+
+  // todo: initializing data structures (linked list and such...)
+
+  return 0;
+}
 
 /**
  * @brief Creates a new thread, whose entry point is the function entry_point with the signature
@@ -25,7 +60,10 @@ int uthread_init (int quantum_usecs);
  *
  * @return On success, return the ID of the created thread. On failure, return -1.
 */
-int uthread_spawn (thread_entry_point entry_point);
+int uthread_spawn (thread_entry_point entry_point)
+{
+  auto *newThread = new thread (nextAvailableId);
+}
 
 /**
  * @brief Terminates the thread with ID tid and deletes it from all relevant control structures.
@@ -37,7 +75,10 @@ int uthread_spawn (thread_entry_point entry_point);
  * @return The function returns 0 if the thread was successfully terminated and -1 otherwise. If a thread terminates
  * itself or the main thread is terminated, the function does not return.
 */
-int uthread_terminate (int tid);
+int uthread_terminate (int tid)
+{
+
+}
 
 /**
  * @brief Blocks the thread with ID tid. The thread may be resumed later using uthread_resume.
@@ -48,7 +89,10 @@ int uthread_terminate (int tid);
  *
  * @return On success, return 0. On failure, return -1.
 */
-int uthread_block (int tid);
+int uthread_block (int tid)
+{
+
+}
 
 /**
  * @brief Resumes a blocked thread with ID tid and moves it to the READY state.
@@ -58,7 +102,10 @@ int uthread_block (int tid);
  *
  * @return On success, return 0. On failure, return -1.
 */
-int uthread_resume (int tid);
+int uthread_resume (int tid)
+{
+
+}
 
 /**
  * @brief Blocks the RUNNING thread for num_quantums quantums.
@@ -71,14 +118,20 @@ int uthread_resume (int tid);
  *
  * @return On success, return 0. On failure, return -1.
 */
-int uthread_sleep (int num_quantums);
+int uthread_sleep (int num_quantums)
+{
+
+}
 
 /**
  * @brief Returns the thread ID of the calling thread.
  *
  * @return The ID of the calling thread.
 */
-int uthread_get_tid ();
+int uthread_get_tid ()
+{
+
+}
 
 /**
  * @brief Returns the total number of quantums since the library was initialized, including the current quantum.
@@ -88,7 +141,10 @@ int uthread_get_tid ();
  *
  * @return The total number of quantums.
 */
-int uthread_get_total_quantums ();
+int uthread_get_total_quantums ()
+{
+
+}
 
 /**
  * @brief Returns the number of quantums the thread with ID tid was in RUNNING state.
@@ -99,4 +155,7 @@ int uthread_get_total_quantums ();
  *
  * @return On success, return the number of quantums of the thread with ID tid. On failure, return -1.
 */
-int uthread_get_quantums (int tid);
+int uthread_get_quantums (int tid)
+{
+
+}
