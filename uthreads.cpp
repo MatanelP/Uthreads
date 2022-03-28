@@ -2,7 +2,7 @@
 // Created by Matanel on 28/03/2022.
 //
 #include "uthreads.h"
-#include <vector>
+#include <set>
 #include <list>
 #include <numeric>
 #include <iostream>
@@ -47,7 +47,7 @@ int getNextId ();
 */
 int quantum;
 int nextAvailableId;
-vector<int> id_vector;
+set<int> available_ids;
 list<thread *> threads_list;
 
 int uthread_init (int quantum_usecs)
@@ -55,8 +55,8 @@ int uthread_init (int quantum_usecs)
   if (quantum_usecs <= 0) return -1;
 
   quantum = quantum_usecs;
-  id_vector = vector<int> (MAX_THREAD_NUM);
-  iota (begin (id_vector), end (id_vector), 0);
+  for (int i = 0; i < MAX_THREAD_NUM; ++i)
+    available_ids.insert(available_ids.end(), i);
   return 0;
 }
 
@@ -83,7 +83,7 @@ int uthread_spawn (thread_entry_point entry_point)
 
 int getNextId ()
 {
-  return !id_vector.empty () ? id_vector.at (0) : -1;
+  return !available_ids.empty () ? *available_ids.begin() : -1;
 }
 
 /**
@@ -98,7 +98,7 @@ int getNextId ()
 */
 int uthread_terminate (int tid)
 {
-  //todo: remove tid from id_vector and sort it
+  //todo: remove tid from available_ids and sort it
 
 }
 
