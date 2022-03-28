@@ -135,6 +135,13 @@ bool is_valid_id (int tid)
 
 }
 
+void run_next_thread(){
+
+    running_thread = ready_threads_list.front();
+    running_thread->set_state(RUNNING);
+    //todo run thread
+}
+
 /**
  * @brief Terminates the thread with ID tid and deletes it from all relevant control structures.
  *
@@ -184,8 +191,12 @@ int uthread_block (int tid)
   thread *curr_thread = it->second;
   if (curr_thread->get_state () != BLOCKED)
     {
+      if (curr_thread->get_state() == RUNNING){
+          run_next_thread();
+      }
       curr_thread->set_state (BLOCKED);
-      //todo scheduling decision?
+      // todo blocking for number of seconds?
+
     }
 
   return 0;
@@ -202,6 +213,15 @@ int uthread_block (int tid)
 */
 int uthread_resume (int tid)
 {
+    if (!is_valid_id(tid)){
+        return -1;
+    }
+
+    thread* thread_to_resume = all_threads[tid];
+    if (thread_to_resume->get_state() == BLOCKED){
+        thread_to_resume->set_state(READY);
+        ready_threads_list.push_back(thread_to_resume);
+    }
 
 }
 
