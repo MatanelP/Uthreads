@@ -3,7 +3,9 @@
 //
 #include "uthreads.h"
 #include <vector>
+#include <list>
 #include <numeric>
+#include <iostream>
 
 using namespace std;
 
@@ -45,13 +47,16 @@ int getNextId ();
 */
 int quantum;
 int nextAvailableId;
-vector<int> idVector;
+vector<int> id_vector;
+list<thread *> threads_list;
 
 int uthread_init (int quantum_usecs)
 {
   if (quantum_usecs <= 0) return -1;
-  vector<int> idVector (MAX_THREAD_NUM);
-  iota (begin (idVector), end (idVector), 0);
+
+  quantum = quantum_usecs;
+  id_vector = vector<int> (MAX_THREAD_NUM);
+  iota (begin (id_vector), end (id_vector), 0);
   return 0;
 }
 
@@ -68,16 +73,16 @@ int uthread_init (int quantum_usecs)
 */
 int uthread_spawn (thread_entry_point entry_point)
 {
-  int nextAvailableId = getNextId ();
-  if (nextAvailableId == -1) return -1;
-  auto *newThread = new thread (nextAvailableId, entry_point);
+  int next_available_id = getNextId ();
+  if (next_available_id == -1) return -1;
+  threads_list.push_back (new thread (next_available_id, entry_point));
 
-  return nextAvailableId;
+  return next_available_id;
 }
 
 int getNextId ()
 {
-  return !idVector.empty () ? idVector.at (0) : -1;
+  return !id_vector.empty () ? id_vector.at (0) : -1;
 }
 
 /**
@@ -92,6 +97,7 @@ int getNextId ()
 */
 int uthread_terminate (int tid)
 {
+  //todo: remove tid from id_vector and sort it
 
 }
 
