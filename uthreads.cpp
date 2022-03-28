@@ -23,7 +23,9 @@ class thread {
 
   explicit thread (int id, thread_entry_point entry_point)
       : _id (id), _entry_point (entry_point), _curr_state (READY)
-  {}
+  {
+    //todo: allocate a buff of size STACK_SIZE
+  }
 
   int get_id () const
   {
@@ -47,7 +49,7 @@ class thread {
 
   void terminate ()
   {
-    //todo
+    //todo: free the buff of size STACK_SIZE allocated in the constructor
   }
 } typedef thread;
 
@@ -248,7 +250,7 @@ int uthread_sleep (int num_quantums)
 */
 int uthread_get_tid ()
 {
-
+  return running_thread->get_id();
 }
 
 /**
