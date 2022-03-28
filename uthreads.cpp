@@ -3,6 +3,7 @@
 //
 #include "uthreads.h"
 #include <vector>
+#include <numeric>
 
 using namespace std;
 
@@ -10,16 +11,22 @@ class thread {
  private:
 
   int _id;
+  thread_entry_point _entry_point;
 
  public:
 
-  explicit thread (int id)
+  explicit thread (int id, thread_entry_point entry_point)
   {
     _id = id;
+    _entry_point = entry_point;
   }
   int get_id () const
   {
     return _id;
+  }
+
+  void run(){
+    _entry_point();
   }
 
 } typedef thread;
@@ -34,7 +41,6 @@ class thread {
  *
  * @return On success, return 0. On failure, return -1.
 */
-
 int quantum;
 int nextAvailableId;
 vector<int> idVector;
@@ -42,10 +48,8 @@ vector<int> idVector;
 int uthread_init (int quantum_usecs)
 {
   if (quantum_usecs <= 0) return -1;
-  quantum = quantum_usecs;
-
-  // todo: initializing data structures (linked list and such...)
-
+  vector<int> idVector (MAX_THREAD_NUM);
+  iota (begin (idVector), end (idVector), 0);
   return 0;
 }
 
@@ -62,7 +66,11 @@ int uthread_init (int quantum_usecs)
 */
 int uthread_spawn (thread_entry_point entry_point)
 {
-  auto *newThread = new thread (nextAvailableId);
+  int nextAvailableId = 0;// getNextId();
+  auto *newThread = new thread (nextAvailableId, entry_point);
+  newThread->run();
+
+  return nextAvailableId;
 }
 
 /**
