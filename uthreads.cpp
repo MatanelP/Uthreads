@@ -10,7 +10,7 @@
 
 using namespace std;
 
-enum state{RUNNING,BLOCKED, READY};
+enum state { RUNNING, BLOCKED, READY };
 
 class thread {
  private:
@@ -22,24 +22,22 @@ class thread {
  public:
 
   explicit thread (int id, thread_entry_point entry_point)
-  {
-    _id = id;
-    _entry_point = entry_point;
-    _curr_state = state(READY);
-  }
+      : _id (id), _entry_point (entry_point), _curr_state (READY)
+  {}
+
   int get_id () const
   {
     return _id;
   }
 
-  state get_state() const
+  state get_state () const
   {
-      return _curr_state;
+    return _curr_state;
   }
 
-  void set_state(state state_)
+  void set_state (state state_)
   {
-      _curr_state = state_;
+    _curr_state = state_;
   }
 
   void run ()
@@ -47,6 +45,10 @@ class thread {
     _entry_point ();
   }
 
+  void terminate ()
+  {
+    //todo
+  }
 } typedef thread;
 
 int getNextId ();
@@ -65,7 +67,9 @@ int nextAvailableId;
 set<int> available_ids;
 list<thread *> ready_threads_list;
 list<thread *> blocked_threads_list;
-map<int,thread *> all_threads;
+map<int, thread *> all_threads;
+list<thread *> threads_list;
+thread *running_thread;
 
 int uthread_init (int quantum_usecs)
 {
@@ -73,7 +77,7 @@ int uthread_init (int quantum_usecs)
 
   quantum = quantum_usecs;
   for (int i = 0; i < MAX_THREAD_NUM; ++i)
-    available_ids.insert(available_ids.end(), i);
+    available_ids.insert (available_ids.end (), i);
   return 0;
 }
 
@@ -92,31 +96,42 @@ int uthread_spawn (thread_entry_point entry_point)
 {
   int next_available_id = getNextId ();
   if (next_available_id == -1) return -1;
-  thread* spawned_thread = new thread (next_available_id, entry_point);
-  ready_threads_list.push_back (spawned_thread);
+  auto *spawned_thread = new thread (next_available_id, entry_point);
+  if (next_available_id == 0) // main thread -> running:
+    {
+      running_thread = spawned_thread;
+    }
+  else
+    {
+      ready_threads_list.push_back (spawned_thread);
+    }
   all_threads[next_available_id] = spawned_thread;
-  //todo1
 
   return next_available_id;
 }
 
 int getNextId ()
 {
-  return !available_ids.empty () ? *available_ids.begin() : -1;
+  if (available_ids.empty ()) return -1;
+  int nextId = *available_ids.begin ();
+  available_ids.erase (nextId);
+  return nextId;
 }
 
-bool is_valid_id(int tid){
+bool is_valid_id (int tid)
+{
 
-    if (tid <= 0 || tid > MAX_THREAD_NUM - 1){
-        return false;
+  if (tid <= 0 || tid > MAX_THREAD_NUM - 1)
+    {
+      return false;
     }
 
-
-    if (available_ids.find(tid) != available_ids.end()){
-        return false;
+  if (available_ids.find (tid) != available_ids.end ())
+    {
+      return false;
     }
 
-    return true;
+  return true;
 
 }
 
@@ -132,8 +147,21 @@ bool is_valid_id(int tid){
 */
 int uthread_terminate (int tid)
 {
-  //todo: remove tid from available_ids and sort it
+  //todo: test tid.
 
+  if (tid != running_thread->get_id ())
+    {
+
+      thread_to_terminate =;
+      thread_to_terminate->terminate ();
+    }
+
+  if (tid == 0)
+    { //terminating main thread
+      terminate_all ();
+      exit (0);
+    }
+  running_thread->terminate (); //self-termination
 }
 
 /**
@@ -147,18 +175,20 @@ int uthread_terminate (int tid)
 */
 int uthread_block (int tid)
 {
-    if (!is_valid_id(tid)){
-        return -1;
+  if (!is_valid_id (tid))
+    {
+      return -1;
     }
 
-    auto it = all_threads.find(tid);
-    thread* curr_thread = it->second;
-    if (curr_thread->get_state() != BLOCKED){
-        curr_thread->set_state(BLOCKED);
-        //todo scheduling decision?
+  auto it = all_threads.find (tid);
+  thread *curr_thread = it->second;
+  if (curr_thread->get_state () != BLOCKED)
+    {
+      curr_thread->set_state (BLOCKED);
+      //todo scheduling decision?
     }
 
-    return 0;
+  return 0;
 
 }
 
