@@ -8,6 +8,48 @@
 #include <numeric>
 #include <iostream>
 
+#ifdef __x86_64__
+/* code for 64 bit Intel arch */
+
+typedef unsigned long address_t;
+#define JB_SP 6
+#define JB_PC 7
+
+/* A translation is required when using an address of a variable.
+   Use this as a black box in your code. */
+address_t translate_address (address_t addr)
+{
+  address_t ret;
+  asm volatile("xor    %%fs:0x30,%0\n"
+               "rol    $0x11,%0\n"
+  : "=g" (ret)
+  : "0" (addr));
+  return ret;
+}
+
+#else
+/* code for 32 bit Intel arch */
+
+typedef unsigned int address_t;
+#define JB_SP 4
+#define JB_PC 5
+
+
+/* A translation is required when using an address of a variable.
+   Use this as a black box in your code. */
+address_t translate_address(address_t addr)
+{
+    address_t ret;
+    asm volatile("xor    %%gs:0x18,%0\n"
+                 "rol    $0x9,%0\n"
+    : "=g" (ret)
+    : "0" (addr));
+    return ret;
+}
+
+
+#endif
+
 using namespace std;
 
 enum state { RUNNING, BLOCKED, READY };
@@ -15,21 +57,30 @@ enum state { RUNNING, BLOCKED, READY };
 class thread {
  private:
 
-  int _id;
+  int _tid;
+
+  sigjmp_buf _env;
+  char *_stack;
   thread_entry_point _entry_point;
   state _curr_state;
 
  public:
 
-  explicit thread (int id, thread_entry_point entry_point)
-      : _id (id), _entry_point (entry_point), _curr_state (READY)
+  explicit thread (int tid, thread_entry_point entry_point)
+      : _tid (tid), _entry_point (entry_point),
+        _curr_state (READY), _stack (new char[STACK_SIZE])
   {
-    //todo: allocate a buff of size STACK_SIZE
+    address_t sp = (address_t) _stack + STACK_SIZE - sizeof (address_t);
+    address_t pc = (address_t) entry_point;
+    sigsetjmp (_env[tid], 1);
+    (_env[tid]->__jmpbuf)[JB_SP] = translate_address (sp);
+    (_env[tid]->__jmpbuf)[JB_PC] = translate_address (pc);
+    sigemptyset (&_env[tid]->__saved_mask);
   }
 
   int get_id () const
   {
-    return _id;
+    return _tid;
   }
 
   state get_state () const
@@ -51,9 +102,31 @@ class thread {
   {
     //todo: free the buff of size STACK_SIZE allocated in the constructor
   }
+
 } typedef thread;
 
-int getNextId ();
+/****** UThreads Implementation: ******/
+
+int quantum;
+int nextAvailableId;
+set<int> available_ids;
+list<thread *> ready_threads_list;
+list<thread *> blocked_threads_list;
+map<int, thread *> all_threads;
+list<thread *> threads_list;
+thread *running_thread;
+
+/*
+ * todo doc
+ */
+int getNextId ()
+{
+  if (available_ids.empty ()) return -1;
+  int nextId = *available_ids.begin ();
+  available_ids.erase (nextId);
+  return nextId;
+}
+
 /**
  * @brief initializes the thread library.
  *
@@ -64,15 +137,6 @@ int getNextId ();
  *
  * @return On success, return 0. On failure, return -1.
 */
-int quantum;
-int nextAvailableId;
-set<int> available_ids;
-list<thread *> ready_threads_list;
-list<thread *> blocked_threads_list;
-map<int, thread *> all_threads;
-list<thread *> threads_list;
-thread *running_thread;
-
 int uthread_init (int quantum_usecs)
 {
   if (quantum_usecs <= 0) return -1;
@@ -112,14 +176,6 @@ int uthread_spawn (thread_entry_point entry_point)
   return next_available_id;
 }
 
-int getNextId ()
-{
-  if (available_ids.empty ()) return -1;
-  int nextId = *available_ids.begin ();
-  available_ids.erase (nextId);
-  return nextId;
-}
-
 bool is_valid_id (int tid)
 {
 
@@ -137,11 +193,12 @@ bool is_valid_id (int tid)
 
 }
 
-void run_next_thread(){
+void run_next_thread ()
+{
 
-    running_thread = ready_threads_list.front();
-    running_thread->set_state(RUNNING);
-    //todo run thread
+  running_thread = ready_threads_list.front ();
+  running_thread->set_state (RUNNING);
+  //todo run thread
 }
 
 /**
@@ -160,7 +217,6 @@ int uthread_terminate (int tid)
 
   if (tid != running_thread->get_id ())
     {
-
       thread_to_terminate =;
       thread_to_terminate->terminate ();
     }
@@ -193,9 +249,10 @@ int uthread_block (int tid)
   thread *curr_thread = it->second;
   if (curr_thread->get_state () != BLOCKED)
     {
-      if (curr_thread->get_state() == RUNNING){
-          run_next_thread();
-      }
+      if (curr_thread->get_state () == RUNNING)
+        {
+          run_next_thread ();
+        }
       curr_thread->set_state (BLOCKED);
       // todo blocking for number of seconds?
 
@@ -215,14 +272,16 @@ int uthread_block (int tid)
 */
 int uthread_resume (int tid)
 {
-    if (!is_valid_id(tid)){
-        return -1;
+  if (!is_valid_id (tid))
+    {
+      return -1;
     }
 
-    thread* thread_to_resume = all_threads[tid];
-    if (thread_to_resume->get_state() == BLOCKED){
-        thread_to_resume->set_state(READY);
-        ready_threads_list.push_back(thread_to_resume);
+  thread *thread_to_resume = all_threads[tid];
+  if (thread_to_resume->get_state () == BLOCKED)
+    {
+      thread_to_resume->set_state (READY);
+      ready_threads_list.push_back (thread_to_resume);
     }
 
 }
@@ -250,7 +309,7 @@ int uthread_sleep (int num_quantums)
 */
 int uthread_get_tid ()
 {
-  return running_thread->get_id();
+  return running_thread->get_id ();
 }
 
 /**
