@@ -105,9 +105,13 @@ class Thread {
     _curr_state = state_;
   }
 
-  void run ()
+  void load ()
   {
-    _entry_point ();
+    siglongjmp(_env, 1);
+  }
+  void save ()
+  {
+    sigsetjmp(_env, 1);
   }
 
   void terminate ()
@@ -119,7 +123,7 @@ class Thread {
 
 /****** UThreads Implementation: ******/
 
-int turns;
+int total_turns;
 set<int> available_ids;
 list<Thread *> ready_threads_list;
 list<Thread *> blocked_threads_list;
@@ -140,14 +144,14 @@ int get_next_id ()
   return nextId;
 }
 
-void timer_handler (int sig)
+void SIGVTALRM_handler (int sig)
 {
   //todo: handle what happens upon SIGVTALRM
 }
 
 int init_helper (int quantum_usecs)
 {
-  sa.sa_handler = &timer_handler;
+  sa.sa_handler = &SIGVTALRM_handler;
   if (sigaction (SIGVTALRM, &sa, NULL) < 0)
     {
       //todo: prints error
@@ -183,7 +187,7 @@ int init_helper (int quantum_usecs)
 int uthread_init (int quantum_usecs)
 {
   if (quantum_usecs <= 0) return -1;
-  turns = 1;
+  total_turns = 1;
   all_threads[0] = new Thread (0, nullptr);
 
   for (int i = 1; i < MAX_THREAD_NUM; ++i)
@@ -254,12 +258,9 @@ void run_next_thread ()
 */
 int uthread_terminate (int tid)
 {
-  //todo: test tid.
-
-  if (tid != running_thread->get_id ())
-    {
-//      thread_to_terminate =;
-//      thread_to_terminate->terminate ();
+  if (available_ids.count (tid))
+    { //tid not assigned
+      //todo: print error.
     }
 
   if (tid == 0)
@@ -267,6 +268,13 @@ int uthread_terminate (int tid)
 //      terminate_all ();
       exit (0);
     }
+
+  if (tid != running_thread->get_id ())
+    {
+//      thread_to_terminate =;
+//      thread_to_terminate->terminate ();
+    }
+
   running_thread->terminate (); //self-termination
 }
 
@@ -363,7 +371,7 @@ int uthread_get_tid ()
 */
 int uthread_get_total_quantums ()
 {
-  return turns;
+  return total_turns;
 }
 
 /**
