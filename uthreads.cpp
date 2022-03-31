@@ -59,7 +59,7 @@ address_t translate_address(address_t addr)
 using namespace std;
 
 enum state { RUNNING, BLOCKED, READY };
-enum action { BLOCKING, TERMINATING, SLEEPING };
+enum action { BLOCKING, TERMINATING, SLEEPING, SCHEDULING };
 
 class Thread {
  private:
@@ -150,9 +150,47 @@ int get_next_id ()
   return nextId;
 }
 
+bool run_next_thread (action action)
+{
+  auto next_thread = !ready_threads_list.empty () ?
+                     ready_threads_list.front () : nullptr;
+  if (next_thread == nullptr)
+    { // no next threads to run
+      running_thread->advance ();
+      total_turns++;
+      return 0;
+    }
+  else
+    {
+      ready_threads_list.pop_front ();
+    }
+  switch (action)
+    {
+      case TERMINATING:break;
+      case BLOCKING:
+        //todo
+        break;
+      case SLEEPING:
+        //todo
+        break;
+      case SCHEDULING:
+        running_thread->set_state (READY);
+        ready_threads_list.push_back (running_thread);
+        running_thread->save();
+        break;
+    }
+  running_thread = next_thread;
+  running_thread->set_state (RUNNING);
+  running_thread->load ();
+  running_thread->advance ();
+  total_turns++;
+  return 0;
+
+}
+
 void SIGVTALRM_handler (int sig)
 {
-  //todo: handle what happens upon SIGVTALRM
+  run_next_thread (SCHEDULING);
 }
 
 int init_helper (int quantum_usecs)
@@ -195,6 +233,7 @@ int uthread_init (int quantum_usecs)
   if (quantum_usecs <= 0) return -1;
   total_turns = 1;
   all_threads[0] = new Thread (0, nullptr);
+  running_thread = all_threads[0];
 
   for (int i = 1; i < MAX_THREAD_NUM; ++i)
     available_ids.insert (available_ids.end (), i);
@@ -244,37 +283,7 @@ bool is_valid_id (int tid)
 
 }
 
-bool run_next_thread (action action)
-{
-  auto next_thread = ready_threads_list.empty () ?
-                     ready_threads_list.front () : nullptr;
-  if (next_thread == nullptr)
-    { // no next threads to run
-      running_thread->advance ();
-      return 0;
-    }
-  else
-    {
-      ready_threads_list.pop_front ();
-    }
-  switch (action)
-    {
-      case TERMINATING:break;
-      case BLOCKING:
-        //todo
-        break;
-      case SLEEPING:
-        //todo
-        break;
-    }
-  running_thread = next_thread;
-  running_thread->set_state (RUNNING);
-  running_thread->load ();
-  running_thread->advance ();
-  total_turns++;
-  return 0;
 
-}
 
 void terminate_thread (int tid)
 {
