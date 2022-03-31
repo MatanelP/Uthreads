@@ -150,6 +150,9 @@ int get_next_id ()
   return nextId;
 }
 
+/*
+ * todo doc
+ */
 bool run_next_thread (action action)
 {
   auto next_thread = !ready_threads_list.empty () ?
@@ -173,11 +176,10 @@ bool run_next_thread (action action)
       case SLEEPING:
         //todo
         break;
-      case SCHEDULING:
-        running_thread->set_state (READY);
-        ready_threads_list.push_back (running_thread);
-        running_thread->save();
-        break;
+      case SCHEDULING:running_thread->set_state (READY);
+      ready_threads_list.push_back (running_thread);
+      running_thread->save ();
+      break;
     }
   running_thread = next_thread;
   running_thread->set_state (RUNNING);
@@ -188,11 +190,17 @@ bool run_next_thread (action action)
 
 }
 
+/*
+ * todo doc
+ */
 void SIGVTALRM_handler (int sig)
 {
   run_next_thread (SCHEDULING);
 }
 
+/*
+ * todo doc
+ */
 int init_helper (int quantum_usecs)
 {
   sa.sa_handler = &SIGVTALRM_handler;
@@ -218,6 +226,27 @@ int init_helper (int quantum_usecs)
     }
   return 0;
 }
+
+/*
+ * todo doc
+ */
+bool is_valid_id (int tid)
+{
+
+  if (tid <= 0 || tid > MAX_THREAD_NUM - 1)
+    {
+      return false;
+    }
+
+  if (available_ids.find (tid) != available_ids.end ())
+    {
+      return false;
+    }
+
+  return true;
+
+}
+
 /**
  * @brief initializes the Thread library.
  *
@@ -240,7 +269,6 @@ int uthread_init (int quantum_usecs)
 
   return init_helper (quantum_usecs);
 }
-
 /**
  * @brief Creates a new Thread, whose entry point is the function entry_point with the signature
  * void entry_point(void).
@@ -265,25 +293,6 @@ int uthread_spawn (thread_entry_point entry_point)
   all_threads[next_available_id] = spawned_thread;
   return next_available_id;
 }
-
-bool is_valid_id (int tid)
-{
-
-  if (tid <= 0 || tid > MAX_THREAD_NUM - 1)
-    {
-      return false;
-    }
-
-  if (available_ids.find (tid) != available_ids.end ())
-    {
-      return false;
-    }
-
-  return true;
-
-}
-
-
 
 void terminate_thread (int tid)
 {
