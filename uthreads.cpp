@@ -59,6 +59,7 @@ address_t translate_address(address_t addr)
 using namespace std;
 
 enum state { RUNNING, BLOCKED, READY };
+enum action { BLOCKING, TERMINATING, SLEEPING };
 
 class Thread {
  private:
@@ -93,6 +94,11 @@ class Thread {
   int get_turns () const
   {
     return _turns;
+  }
+
+  void advance ()
+  {
+    _turns++;
   }
 
   int get_id () const
@@ -238,19 +244,43 @@ bool is_valid_id (int tid)
 
 }
 
-bool run_next_thread ()
+bool run_next_thread (action action)
 {
-
-  running_thread = ready_threads_list.front ();
+  auto next_thread = ready_threads_list.empty () ?
+                     ready_threads_list.front () : nullptr;
+  if (next_thread == nullptr)
+    { // no next threads to run
+      running_thread->advance ();
+      return 0;
+    }
+  else
+    {
+      ready_threads_list.pop_front ();
+    }
+  switch (action)
+    {
+      case TERMINATING:break;
+      case BLOCKING:
+        //todo
+        break;
+      case SLEEPING:
+        //todo
+        break;
+    }
+  running_thread = next_thread;
   running_thread->set_state (RUNNING);
-  //todo run Thread
+  running_thread->load ();
+  running_thread->advance ();
+  total_turns++;
+  return 0;
+
 }
 
 void terminate_thread (int tid)
 {
   auto p_thread = all_threads[tid];
   all_threads.erase (tid);
-  available_ids.insert(tid);
+  available_ids.insert (tid);
   ready_threads_list.remove (p_thread);
   delete p_thread;
 }
@@ -283,7 +313,8 @@ int uthread_terminate (int tid)
 
   if (tid == running_thread->get_id ()) //self-termination
     {
-      if (!run_next_thread ())
+      terminate_thread (tid);
+      if (!run_next_thread (TERMINATING))
         {
           //todo: print error.
           return -1;
@@ -317,7 +348,7 @@ int uthread_block (int tid)
     {
       if (curr_thread->get_state () == RUNNING)
         {
-          run_next_thread ();
+          run_next_thread (SLEEPING);
         }
       curr_thread->set_state (BLOCKED);
       // todo blocking for number of seconds?
