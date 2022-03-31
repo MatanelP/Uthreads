@@ -85,6 +85,11 @@ class Thread {
     sigemptyset (&_env->__saved_mask);
   }
 
+  ~Thread ()
+  {
+    delete[] _stack;
+  }
+
   int get_turns () const
   {
     return _turns;
@@ -112,11 +117,6 @@ class Thread {
   void save ()
   {
     sigsetjmp(_env, 1);
-  }
-
-  void terminate ()
-  {
-    //todo: free the buff of size STACK_SIZE allocated in the constructor
   }
 
 } typedef Thread;
@@ -238,7 +238,7 @@ bool is_valid_id (int tid)
 
 }
 
-void run_next_thread ()
+bool run_next_thread ()
 {
 
   running_thread = ready_threads_list.front ();
@@ -246,6 +246,14 @@ void run_next_thread ()
   //todo run Thread
 }
 
+void terminate_thread (int tid)
+{
+  auto p_thread = all_threads[tid];
+  all_threads.erase (tid);
+  available_ids.insert(tid);
+  ready_threads_list.remove (p_thread);
+  delete p_thread;
+}
 /**
  * @brief Terminates the Thread with ID tid and deletes it from all relevant control structures.
  *
@@ -258,24 +266,33 @@ void run_next_thread ()
 */
 int uthread_terminate (int tid)
 {
-  if (available_ids.count (tid))
-    { //tid not assigned
-      //todo: print error.
-    }
-
   if (tid == 0)
     { //terminating main Thread
-//      terminate_all ();
+      for (auto &thread_p: all_threads)
+        {
+          delete thread_p.second;
+        }
       exit (0);
     }
 
-  if (tid != running_thread->get_id ())
-    {
-//      thread_to_terminate =;
-//      thread_to_terminate->terminate ();
+  if (available_ids.count (tid))
+    { //tid not assigned
+      //todo: print error.
+      return -1;
     }
 
-  running_thread->terminate (); //self-termination
+  if (tid == running_thread->get_id ()) //self-termination
+    {
+      if (!run_next_thread ())
+        {
+          //todo: print error.
+          return -1;
+        }
+    }
+
+  terminate_thread (tid);
+  return 0;
+
 }
 
 /**
