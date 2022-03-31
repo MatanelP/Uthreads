@@ -7,6 +7,12 @@
 #include <list>
 #include <numeric>
 #include <iostream>
+#include <stdio.h>
+#include <setjmp.h>
+#include <signal.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <stdbool.h>
 
 #ifdef __x86_64__
 /* code for 64 bit Intel arch */
@@ -54,10 +60,10 @@ using namespace std;
 
 enum state { RUNNING, BLOCKED, READY };
 
-class thread {
+class Thread {
  private:
 
-  int _tid;
+  int _tid, _turns;
 
   sigjmp_buf _env;
   char *_stack;
@@ -66,16 +72,22 @@ class thread {
 
  public:
 
-  explicit thread (int tid, thread_entry_point entry_point)
+  explicit Thread (int tid, thread_entry_point entry_point)
       : _tid (tid), _entry_point (entry_point),
-        _curr_state (READY), _stack (new char[STACK_SIZE])
+        _curr_state (READY), _stack (new char[STACK_SIZE]), _turns (0)
   {
+    if (tid == 0) return;
     address_t sp = (address_t) _stack + STACK_SIZE - sizeof (address_t);
     address_t pc = (address_t) entry_point;
-    sigsetjmp (_env[tid], 1);
-    (_env[tid]->__jmpbuf)[JB_SP] = translate_address (sp);
-    (_env[tid]->__jmpbuf)[JB_PC] = translate_address (pc);
-    sigemptyset (&_env[tid]->__saved_mask);
+    sigsetjmp (_env, 1);
+    (_env->__jmpbuf)[JB_SP] = translate_address (sp);
+    (_env->__jmpbuf)[JB_PC] = translate_address (pc);
+    sigemptyset (&_env->__saved_mask);
+  }
+
+  int get_turns () const
+  {
+    return _turns;
   }
 
   int get_id () const
@@ -103,23 +115,24 @@ class thread {
     //todo: free the buff of size STACK_SIZE allocated in the constructor
   }
 
-} typedef thread;
+} typedef Thread;
 
 /****** UThreads Implementation: ******/
 
-int quantum;
-int nextAvailableId;
+int turns;
 set<int> available_ids;
-list<thread *> ready_threads_list;
-list<thread *> blocked_threads_list;
-map<int, thread *> all_threads;
-list<thread *> threads_list;
-thread *running_thread;
+list<Thread *> ready_threads_list;
+list<Thread *> blocked_threads_list;
+map<int, Thread *> all_threads;
+list<Thread *> threads_list;
+Thread *running_thread;
+struct sigaction sa;
+struct itimerval timer;
 
 /*
  * todo doc
  */
-int getNextId ()
+int get_next_id ()
 {
   if (available_ids.empty ()) return -1;
   int nextId = *available_ids.begin ();
@@ -127,10 +140,40 @@ int getNextId ()
   return nextId;
 }
 
+void timer_handler (int sig)
+{
+  //todo: handle what happens upon SIGVTALRM
+}
+
+int init_helper (int quantum_usecs)
+{
+  sa.sa_handler = &timer_handler;
+  if (sigaction (SIGVTALRM, &sa, NULL) < 0)
+    {
+      //todo: prints error
+      exit (EXIT_FAILURE);
+    }
+
+  // Configure the timer to expire after quantum_usecs usec... */
+  timer.it_value.tv_sec = 0;        // first time interval, seconds part
+  timer.it_value.tv_usec = quantum_usecs;        // first time interval, microseconds part
+
+  // configure the timer to expire every quantum_usecs usec after that.
+  timer.it_interval.tv_sec = 0;    // following time intervals, seconds part
+  timer.it_interval.tv_usec = quantum_usecs;    // following time intervals, microseconds part
+
+  // Start a virtual timer. It counts down whenever this process is executing.
+  if (setitimer (ITIMER_VIRTUAL, &timer, NULL))
+    {
+      //todo: prints error
+      exit (EXIT_FAILURE);
+    }
+  return 0;
+}
 /**
- * @brief initializes the thread library.
+ * @brief initializes the Thread library.
  *
- * You may assume that this function is called before any other thread library function, and that it is called
+ * You may assume that this function is called before any other Thread library function, and that it is called
  * exactly once.
  * The input to the function is the length of a quantum in micro-seconds.
  * It is an error to call this function with non-positive quantum_usecs.
@@ -140,39 +183,37 @@ int getNextId ()
 int uthread_init (int quantum_usecs)
 {
   if (quantum_usecs <= 0) return -1;
+  turns = 1;
+  all_threads[0] = new Thread (0, nullptr);
 
-  quantum = quantum_usecs;
-  for (int i = 0; i < MAX_THREAD_NUM; ++i)
+  for (int i = 1; i < MAX_THREAD_NUM; ++i)
     available_ids.insert (available_ids.end (), i);
-  return 0;
+
+  return init_helper (quantum_usecs);
 }
 
 /**
- * @brief Creates a new thread, whose entry point is the function entry_point with the signature
+ * @brief Creates a new Thread, whose entry point is the function entry_point with the signature
  * void entry_point(void).
  *
- * The thread is added to the end of the READY threads list.
+ * The Thread is added to the end of the READY threads list.
  * The uthread_spawn function should fail if it would cause the number of concurrent threads to exceed the
  * limit (MAX_THREAD_NUM).
- * Each thread should be allocated with a stack of size STACK_SIZE bytes.
+ * Each Thread should be allocated with a stack of size STACK_SIZE bytes.
  *
- * @return On success, return the ID of the created thread. On failure, return -1.
+ * @return On success, return the ID of the created Thread. On failure, return -1.
 */
 int uthread_spawn (thread_entry_point entry_point)
 {
-  int next_available_id = getNextId ();
-  if (next_available_id == -1) return -1;
-  auto *spawned_thread = new thread (next_available_id, entry_point);
-  if (next_available_id == 0) // main thread -> running:
+  int next_available_id = get_next_id ();
+  if (next_available_id == -1)
     {
-      running_thread = spawned_thread;
+      //todo: printerror
+      return -1;
     }
-  else
-    {
-      ready_threads_list.push_back (spawned_thread);
-    }
+  auto *spawned_thread = new Thread (next_available_id, entry_point);
+  ready_threads_list.push_back (spawned_thread);
   all_threads[next_available_id] = spawned_thread;
-
   return next_available_id;
 }
 
@@ -198,18 +239,18 @@ void run_next_thread ()
 
   running_thread = ready_threads_list.front ();
   running_thread->set_state (RUNNING);
-  //todo run thread
+  //todo run Thread
 }
 
 /**
- * @brief Terminates the thread with ID tid and deletes it from all relevant control structures.
+ * @brief Terminates the Thread with ID tid and deletes it from all relevant control structures.
  *
- * All the resources allocated by the library for this thread should be released. If no thread with ID tid exists it
- * is considered an error. Terminating the main thread (tid == 0) will result in the termination of the entire
+ * All the resources allocated by the library for this Thread should be released. If no Thread with ID tid exists it
+ * is considered an error. Terminating the main Thread (tid == 0) will result in the termination of the entire
  * process using exit(0) (after releasing the assigned library memory).
  *
- * @return The function returns 0 if the thread was successfully terminated and -1 otherwise. If a thread terminates
- * itself or the main thread is terminated, the function does not return.
+ * @return The function returns 0 if the Thread was successfully terminated and -1 otherwise. If a Thread terminates
+ * itself or the main Thread is terminated, the function does not return.
 */
 int uthread_terminate (int tid)
 {
@@ -217,23 +258,23 @@ int uthread_terminate (int tid)
 
   if (tid != running_thread->get_id ())
     {
-      thread_to_terminate =;
-      thread_to_terminate->terminate ();
+//      thread_to_terminate =;
+//      thread_to_terminate->terminate ();
     }
 
   if (tid == 0)
-    { //terminating main thread
-      terminate_all ();
+    { //terminating main Thread
+//      terminate_all ();
       exit (0);
     }
   running_thread->terminate (); //self-termination
 }
 
 /**
- * @brief Blocks the thread with ID tid. The thread may be resumed later using uthread_resume.
+ * @brief Blocks the Thread with ID tid. The Thread may be resumed later using uthread_resume.
  *
- * If no thread with ID tid exists it is considered as an error. In addition, it is an error to try blocking the
- * main thread (tid == 0). If a thread blocks itself, a scheduling decision should be made. Blocking a thread in
+ * If no Thread with ID tid exists it is considered as an error. In addition, it is an error to try blocking the
+ * main Thread (tid == 0). If a Thread blocks itself, a scheduling decision should be made. Blocking a Thread in
  * BLOCKED state has no effect and is not considered an error.
  *
  * @return On success, return 0. On failure, return -1.
@@ -246,7 +287,7 @@ int uthread_block (int tid)
     }
 
   auto it = all_threads.find (tid);
-  thread *curr_thread = it->second;
+  Thread *curr_thread = it->second;
   if (curr_thread->get_state () != BLOCKED)
     {
       if (curr_thread->get_state () == RUNNING)
@@ -263,9 +304,9 @@ int uthread_block (int tid)
 }
 
 /**
- * @brief Resumes a blocked thread with ID tid and moves it to the READY state.
+ * @brief Resumes a blocked Thread with ID tid and moves it to the READY state.
  *
- * Resuming a thread in a RUNNING or READY state has no effect and is not considered as an error. If no thread with
+ * Resuming a Thread in a RUNNING or READY state has no effect and is not considered as an error. If no Thread with
  * ID tid exists it is considered an error.
  *
  * @return On success, return 0. On failure, return -1.
@@ -277,7 +318,7 @@ int uthread_resume (int tid)
       return -1;
     }
 
-  thread *thread_to_resume = all_threads[tid];
+  Thread *thread_to_resume = all_threads[tid];
   if (thread_to_resume->get_state () == BLOCKED)
     {
       thread_to_resume->set_state (READY);
@@ -287,13 +328,13 @@ int uthread_resume (int tid)
 }
 
 /**
- * @brief Blocks the RUNNING thread for num_quantums quantums.
+ * @brief Blocks the RUNNING Thread for num_quantums quantums.
  *
- * Immediately after the RUNNING thread transitions to the BLOCKED state a scheduling decision should be made.
- * After the sleeping time is over, the thread should go back to the end of the READY threads list.
+ * Immediately after the RUNNING Thread transitions to the BLOCKED state a scheduling decision should be made.
+ * After the sleeping time is over, the Thread should go back to the end of the READY threads list.
  * The number of quantums refers to the number of times a new quantum starts, regardless of the reason. Specifically,
- * the quantum of the thread which has made the call to uthread_sleep isn’t counted.
- * It is considered an error if the main thread (tid==0) calls this function.
+ * the quantum of the Thread which has made the call to uthread_sleep isn’t counted.
+ * It is considered an error if the main Thread (tid==0) calls this function.
  *
  * @return On success, return 0. On failure, return -1.
 */
@@ -303,9 +344,9 @@ int uthread_sleep (int num_quantums)
 }
 
 /**
- * @brief Returns the thread ID of the calling thread.
+ * @brief Returns the Thread ID of the calling Thread.
  *
- * @return The ID of the calling thread.
+ * @return The ID of the calling Thread.
 */
 int uthread_get_tid ()
 {
@@ -322,19 +363,19 @@ int uthread_get_tid ()
 */
 int uthread_get_total_quantums ()
 {
-
+  return turns;
 }
 
 /**
- * @brief Returns the number of quantums the thread with ID tid was in RUNNING state.
+ * @brief Returns the number of quantums the Thread with ID tid was in RUNNING state.
  *
- * On the first time a thread runs, the function should return 1. Every additional quantum that the thread starts should
- * increase this value by 1 (so if the thread with ID tid is in RUNNING state when this function is called, include
- * also the current quantum). If no thread with ID tid exists it is considered an error.
+ * On the first time a Thread runs, the function should return 1. Every additional quantum that the Thread starts should
+ * increase this value by 1 (so if the Thread with ID tid is in RUNNING state when this function is called, include
+ * also the current quantum). If no Thread with ID tid exists it is considered an error.
  *
- * @return On success, return the number of quantums of the thread with ID tid. On failure, return -1.
+ * @return On success, return the number of quantums of the Thread with ID tid. On failure, return -1.
 */
 int uthread_get_quantums (int tid)
 {
-
+  return all_threads.count (tid) ? all_threads[tid]->get_turns () : -1;
 }
