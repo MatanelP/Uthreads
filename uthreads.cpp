@@ -20,6 +20,17 @@
 typedef unsigned long address_t;
 #define JB_SP 6
 #define JB_PC 7
+#define ERROR_SYSTEM_CALL "system error: "
+#define ERROR_THREAD_LIBRARY "thread library error: "
+#define MAX_THREADS "maximum number of threads reached"
+#define NO_THREAD "specified thread does not exist"
+#define MAIN_THREAD_SLEEP "cannot put main thread to sleep"
+#define NEGATIVE_SLEEP_SECONDS "number of seconds must be greater than 0"
+#define TIMER_FAIL "memory allocation for timer failed"
+#define MASKING_FAIL "masking has failed"
+#define UNMASKING_FAIL "unmasking has failed"
+#define SIGACTION_FAIL "sigaction has failed"
+
 
 /* A translation is required when using an address of a variable.
    Use this as a black box in your code. */
@@ -60,6 +71,7 @@ using namespace std;
 
 enum state { RUNNING, BLOCKED, READY };
 enum action { BLOCKING, TERMINATING, SLEEPING, SCHEDULING };
+enum error_enum{SYSTEM, THREAD_LIBRARY};
 
 class Thread {
  private:
@@ -139,11 +151,35 @@ Thread *running_thread;
 struct sigaction sa;
 struct itimerval timer;
 
+
+
+/**
+ * Helper function to print error messages to stderr
+ * @param error_type Broad type of error
+ * @param error_explanation Detailed explanation of error
+ */
+void output_error(error_enum error_type, const string& error_explanation) {
+
+    string error_type_output;
+    switch(error_type){
+        case SYSTEM:
+            error_type_output = ERROR_SYSTEM_CALL;
+            break;
+        case THREAD_LIBRARY:
+            error_type_output = ERROR_THREAD_LIBRARY;
+            break;
+    }
+
+    cerr << error_type_output << error_explanation << endl;
+}
+
+
 void mask_signals ()
 {
   if (sigprocmask (SIG_BLOCK, &sa.sa_mask, nullptr) == -1)
     {
       //todo printerror
+      output_error(SYSTEM, MASKING_FAIL);
       exit (EXIT_FAILURE);
     }
 }
@@ -153,6 +189,7 @@ void unmask_signals ()
   if (sigprocmask (SIG_UNBLOCK, &sa.sa_mask, nullptr) == -1)
     {
       //todo printerror
+      output_error(SYSTEM, UNMASKING_FAIL);
       exit (EXIT_FAILURE);
     }
 }
@@ -234,6 +271,7 @@ int init_helper (int quantum_usecs)
   if (sigaction (SIGVTALRM, &sa, NULL) < 0)
     {
       //todo: prints error
+      output_error(SYSTEM, SIGACTION_FAIL);
       exit (EXIT_FAILURE);
     }
 
@@ -249,6 +287,7 @@ int init_helper (int quantum_usecs)
   if (setitimer (ITIMER_VIRTUAL, &timer, NULL))
     {
       //todo: prints error
+      output_error(SYSTEM, TIMER_FAIL);
       exit (EXIT_FAILURE);
     }
   unmask_signals ();
@@ -315,7 +354,7 @@ int uthread_spawn (thread_entry_point entry_point)
   int next_available_id = get_next_id ();
   if (next_available_id == -1)
     {
-      //todo: printerror
+      output_error(SYSTEM, MAX_THREADS);
       unmask_signals ();
       return -1;
     }
@@ -360,7 +399,7 @@ int uthread_terminate (int tid)
 
   if (available_ids.count (tid))
     { //tid not assigned
-      //todo: print error.
+      output_error(THREAD_LIBRARY, NO_THREAD);
       unmask_signals ();
       return -1;
     }
@@ -431,6 +470,7 @@ int uthread_resume (int tid)
   mask_signals ();
   if (!is_valid_id (tid))
     {
+      output_error(THREAD_LIBRARY, NO_THREAD);
       unmask_signals ();
       return -1;
     }
@@ -457,6 +497,19 @@ int uthread_resume (int tid)
 */
 int uthread_sleep (int num_quantums)
 {
+  string error_explanation;
+  if (uthread_get_tid() == 0){
+      error_explanation = MAIN_THREAD_SLEEP;
+  }
+  if (num_quantums <= 0){
+      error_explanation = NEGATIVE_SLEEP_SECONDS;
+  }
+
+  if (!error_explanation.empty()){
+      output_error(THREAD_LIBRARY, error_explanation);
+      return -1;
+  }
+
   mask_signals ();
 
   unmask_signals ();
@@ -496,5 +549,14 @@ int uthread_get_total_quantums ()
 */
 int uthread_get_quantums (int tid)
 {
-  return all_threads.count (tid) ? all_threads[tid]->get_turns () : -1;
+    if (all_threads.count(tid)){
+        return all_threads[tid]-> get_turns();
+    }
+
+    output_error(THREAD_LIBRARY, NO_THREAD);
+    return -1;
+
+
+//    return all_threads.count (tid) ? all_threads[tid]->get_turns () : -1;
 }
+
