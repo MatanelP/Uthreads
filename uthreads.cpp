@@ -139,14 +139,37 @@ Thread *running_thread;
 struct sigaction sa;
 struct itimerval timer;
 
+void mask_signals ()
+{
+  if (sigprocmask (SIG_BLOCK, &sa.sa_mask, nullptr) == -1)
+    {
+      //todo printerror
+      exit (EXIT_FAILURE);
+    }
+}
+
+void unmask_signals ()
+{
+  if (sigprocmask (SIG_UNBLOCK, &sa.sa_mask, nullptr) == -1)
+    {
+      //todo printerror
+      exit (EXIT_FAILURE);
+    }
+}
 /*
  * todo doc
  */
 int get_next_id ()
 {
-  if (available_ids.empty ()) return -1;
+  mask_signals ();
+  if (available_ids.empty ())
+    {
+      unmask_signals ();
+      return -1;
+    }
   int nextId = *available_ids.begin ();
   available_ids.erase (nextId);
+  unmask_signals ();
   return nextId;
 }
 
@@ -155,12 +178,14 @@ int get_next_id ()
  */
 bool run_next_thread (action action)
 {
+  mask_signals ();
   auto next_thread = !ready_threads_list.empty () ?
                      ready_threads_list.front () : nullptr;
   if (next_thread == nullptr)
     { // no next threads to run
       running_thread->advance ();
       total_turns++;
+      unmask_signals ();
       return 0;
     }
   else
@@ -186,6 +211,7 @@ bool run_next_thread (action action)
   running_thread->load ();
   running_thread->advance ();
   total_turns++;
+  unmask_signals ();
   return 0;
 
 }
@@ -203,6 +229,7 @@ void SIGVTALRM_handler (int sig)
  */
 int init_helper (int quantum_usecs)
 {
+  mask_signals ();
   sa.sa_handler = &SIGVTALRM_handler;
   if (sigaction (SIGVTALRM, &sa, NULL) < 0)
     {
@@ -224,6 +251,7 @@ int init_helper (int quantum_usecs)
       //todo: prints error
       exit (EXIT_FAILURE);
     }
+  unmask_signals ();
   return 0;
 }
 
@@ -259,6 +287,7 @@ bool is_valid_id (int tid)
 */
 int uthread_init (int quantum_usecs)
 {
+  mask_signals ();
   if (quantum_usecs <= 0) return -1;
   total_turns = 1;
   all_threads[0] = new Thread (0, nullptr);
@@ -266,7 +295,7 @@ int uthread_init (int quantum_usecs)
 
   for (int i = 1; i < MAX_THREAD_NUM; ++i)
     available_ids.insert (available_ids.end (), i);
-
+  unmask_signals ();
   return init_helper (quantum_usecs);
 }
 /**
@@ -282,25 +311,30 @@ int uthread_init (int quantum_usecs)
 */
 int uthread_spawn (thread_entry_point entry_point)
 {
+  mask_signals ();
   int next_available_id = get_next_id ();
   if (next_available_id == -1)
     {
       //todo: printerror
+      unmask_signals ();
       return -1;
     }
   auto *spawned_thread = new Thread (next_available_id, entry_point);
   ready_threads_list.push_back (spawned_thread);
   all_threads[next_available_id] = spawned_thread;
+  unmask_signals ();
   return next_available_id;
 }
 
 void terminate_thread (int tid)
 {
+  mask_signals ();
   auto p_thread = all_threads[tid];
   all_threads.erase (tid);
   available_ids.insert (tid);
   ready_threads_list.remove (p_thread);
   delete p_thread;
+  unmask_signals ();
 }
 /**
  * @brief Terminates the Thread with ID tid and deletes it from all relevant control structures.
@@ -314,6 +348,7 @@ void terminate_thread (int tid)
 */
 int uthread_terminate (int tid)
 {
+  mask_signals ();
   if (tid == 0)
     { //terminating main Thread
       for (auto &thread_p: all_threads)
@@ -326,6 +361,7 @@ int uthread_terminate (int tid)
   if (available_ids.count (tid))
     { //tid not assigned
       //todo: print error.
+      unmask_signals ();
       return -1;
     }
 
@@ -335,11 +371,13 @@ int uthread_terminate (int tid)
       if (!run_next_thread (TERMINATING))
         {
           //todo: print error.
+          unmask_signals ();
           return -1;
         }
     }
 
   terminate_thread (tid);
+  unmask_signals ();
   return 0;
 
 }
@@ -355,8 +393,10 @@ int uthread_terminate (int tid)
 */
 int uthread_block (int tid)
 {
+  mask_signals ();
   if (!is_valid_id (tid))
     {
+      unmask_signals ();
       return -1;
     }
 
@@ -373,6 +413,7 @@ int uthread_block (int tid)
 
     }
 
+  unmask_signals ();
   return 0;
 
 }
@@ -387,8 +428,10 @@ int uthread_block (int tid)
 */
 int uthread_resume (int tid)
 {
+  mask_signals ();
   if (!is_valid_id (tid))
     {
+      unmask_signals ();
       return -1;
     }
 
@@ -398,7 +441,7 @@ int uthread_resume (int tid)
       thread_to_resume->set_state (READY);
       ready_threads_list.push_back (thread_to_resume);
     }
-
+  unmask_signals ();
 }
 
 /**
@@ -414,7 +457,9 @@ int uthread_resume (int tid)
 */
 int uthread_sleep (int num_quantums)
 {
+  mask_signals ();
 
+  unmask_signals ();
 }
 
 /**
