@@ -5,14 +5,30 @@ EX: 1
 FILES:
 todo
 
-ANSWERS:
+Part 1: Theoretical Questions -
 
-Assignment 1:
-	todo
+    1.  A video game - Where different user-level-threads are handling
+        different aspects in the game. One thread could handle the user input,
+        while another handles a game object, and a third thread handles
+        rendering the image to the screen. In a fast-pacing game, we could take
+        advantage of the low overhead involve in a user-level-threads as
+        apposed to kernel-level-thread or a process,
+        resulting in a much smoother user experience.
 
-Assignment 2:
-    hashmap - id : Thread
-    linkedList - threads
+    2.  Advantages - The different tabs a totally separated at the hardware
+        level. so, if one tab or website crashes of is infected with a malware,
+        the rest of the tabs and system are safe.
+        We will get a more secure experience and less prone to disruptions.
+        Disadvantages - Because of the overhead involved in switching process,
+        the overall program will run less smoothly, and many more resources
+        will be exhausted by the program (high RAM usage).
+
+
+    3.
+
+    4.
+
+    5.
 
 
 	
