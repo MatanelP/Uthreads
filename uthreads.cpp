@@ -153,6 +153,7 @@ struct itimerval timer;
 
 
 
+
 /**
  * Helper function to print error messages to stderr
  * @param error_type Broad type of error
@@ -234,6 +235,7 @@ bool run_next_thread (action action)
       case TERMINATING:break;
       case BLOCKING:
         //todo
+
         break;
       case SLEEPING:
         //todo
@@ -421,6 +423,13 @@ int uthread_terminate (int tid)
 
 }
 
+
+void ready_to_blocked(Thread* thread){
+    ready_threads_list.remove(thread);
+    blocked_threads_list.push_back(thread);
+    thread->set_state (BLOCKED);
+
+}
 /**
  * @brief Blocks the Thread with ID tid. The Thread may be resumed later using uthread_resume.
  *
@@ -435,6 +444,7 @@ int uthread_block (int tid)
   mask_signals ();
   if (!is_valid_id (tid))
     {
+      output_error(THREAD_LIBRARY, NO_THREAD);
       unmask_signals ();
       return -1;
     }
@@ -447,7 +457,8 @@ int uthread_block (int tid)
         {
           run_next_thread (SLEEPING);
         }
-      curr_thread->set_state (BLOCKED);
+        ready_to_blocked(curr_thread);
+
       // todo blocking for number of seconds?
 
     }
@@ -455,6 +466,12 @@ int uthread_block (int tid)
   unmask_signals ();
   return 0;
 
+}
+
+void blocked_to_ready(Thread* thread){
+    thread->set_state (READY);
+    ready_threads_list.push_back (thread);
+    blocked_threads_list.remove(thread);
 }
 
 /**
@@ -478,8 +495,7 @@ int uthread_resume (int tid)
   Thread *thread_to_resume = all_threads[tid];
   if (thread_to_resume->get_state () == BLOCKED)
     {
-      thread_to_resume->set_state (READY);
-      ready_threads_list.push_back (thread_to_resume);
+      blocked_to_ready(thread_to_resume);
     }
   unmask_signals ();
 }
