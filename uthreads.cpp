@@ -31,7 +31,6 @@ typedef unsigned long address_t;
 #define UNMASKING_FAIL "unmasking has failed"
 #define SIGACTION_FAIL "sigaction has failed"
 
-
 /* A translation is required when using an address of a variable.
    Use this as a black box in your code. */
 address_t translate_address (address_t addr)
@@ -69,14 +68,14 @@ address_t translate_address(address_t addr)
 
 using namespace std;
 
-enum state { RUNNING, BLOCKED, READY };
+enum state { RUNNING, BLOCKED, READY, SLEEP, SLEEP_BLOCKED };
 enum action { BLOCKING, TERMINATING, SLEEPING, SCHEDULING };
-enum error_enum{SYSTEM, THREAD_LIBRARY};
+enum error_enum { SYSTEM, THREAD_LIBRARY };
 
 class Thread {
  private:
 
-  int _tid, _turns;
+  int _tid, _turns, _quantumsToWait;
 
   sigjmp_buf _env;
   char *_stack;
@@ -84,12 +83,18 @@ class Thread {
   state _curr_state;
 
  public:
+  void set_quantums_to_wait (int quantums_to_wait)
+  {
+    _quantumsToWait = quantums_to_wait;
+  }
+ public:
 
   explicit Thread (int tid, thread_entry_point entry_point)
       : _tid (tid), _entry_point (entry_point),
-        _curr_state (READY), _stack (new char[STACK_SIZE]), _turns (0)
+        _curr_state (READY), _stack (new char[STACK_SIZE]), _turns (0),
+        _quantumsToWait (0)
   {
-    if (tid == 0) return;
+    if (tid == 0) return; //todo: main thread like the other?!
     address_t sp = (address_t) _stack + STACK_SIZE - sizeof (address_t);
     address_t pc = (address_t) entry_point;
     sigsetjmp (_env, 1);
@@ -137,6 +142,14 @@ class Thread {
     sigsetjmp(_env, 1);
   }
 
+  void sleep_update ()
+  {
+    _quantumsToWait--;
+    if (_quantumsToWait == 0)
+      {
+        uthread_resume (_tid);
+      }
+  }
 } typedef Thread;
 
 /****** UThreads Implementation: ******/
@@ -144,6 +157,7 @@ class Thread {
 int total_turns;
 set<int> available_ids;
 list<Thread *> ready_threads_list;
+list<Thread *> sleeping_threads_list;
 list<Thread *> blocked_threads_list;
 map<int, Thread *> all_threads;
 list<Thread *> threads_list;
@@ -151,36 +165,32 @@ Thread *running_thread;
 struct sigaction sa;
 struct itimerval timer;
 
-
-
-
 /**
  * Helper function to print error messages to stderr
  * @param error_type Broad type of error
  * @param error_explanation Detailed explanation of error
  */
-void output_error(error_enum error_type, const string& error_explanation) {
+void output_error (error_enum error_type, const string &error_explanation)
+{
 
-    string error_type_output;
-    switch(error_type){
-        case SYSTEM:
-            error_type_output = ERROR_SYSTEM_CALL;
-            break;
-        case THREAD_LIBRARY:
-            error_type_output = ERROR_THREAD_LIBRARY;
-            break;
+  string error_type_output;
+  switch (error_type)
+    {
+      case SYSTEM:error_type_output = ERROR_SYSTEM_CALL;
+      break;
+      case THREAD_LIBRARY:error_type_output = ERROR_THREAD_LIBRARY;
+      break;
     }
 
-    cerr << error_type_output << error_explanation << endl;
+  cerr << error_type_output << error_explanation << endl;
 }
-
 
 void mask_signals ()
 {
   if (sigprocmask (SIG_BLOCK, &sa.sa_mask, nullptr) == -1)
     {
       //todo printerror
-      output_error(SYSTEM, MASKING_FAIL);
+      output_error (SYSTEM, MASKING_FAIL);
       exit (EXIT_FAILURE);
     }
 }
@@ -190,7 +200,7 @@ void unmask_signals ()
   if (sigprocmask (SIG_UNBLOCK, &sa.sa_mask, nullptr) == -1)
     {
       //todo printerror
-      output_error(SYSTEM, UNMASKING_FAIL);
+      output_error (SYSTEM, UNMASKING_FAIL);
       exit (EXIT_FAILURE);
     }
 }
@@ -211,12 +221,29 @@ int get_next_id ()
   return nextId;
 }
 
+void ready_to_blocked (Thread * thread)
+{
+  ready_threads_list.remove (thread);
+  blocked_threads_list.push_back (thread);
+  thread->set_state (BLOCKED);
+}
+
+void update_sleeping_threads ()
+{
+  for (auto sleeper: sleeping_threads_list)
+    {
+      sleeper->sleep_update ();
+    }
+}
 /*
  * todo doc
  */
 bool run_next_thread (action action)
 {
   mask_signals ();
+
+  update_sleeping_threads ();
+
   auto next_thread = !ready_threads_list.empty () ?
                      ready_threads_list.front () : nullptr;
   if (next_thread == nullptr)
@@ -233,13 +260,13 @@ bool run_next_thread (action action)
   switch (action)
     {
       case TERMINATING:break;
-      case BLOCKING:
-        //todo
+      case BLOCKING:ready_to_blocked (running_thread);
 
-        break;
-      case SLEEPING:
-        //todo
-        break;
+      break;
+      case SLEEPING:running_thread->set_state (SLEEP);
+      sleeping_threads_list.push_back (running_thread);
+      running_thread->save ();
+      break;
       case SCHEDULING:running_thread->set_state (READY);
       ready_threads_list.push_back (running_thread);
       running_thread->save ();
@@ -260,6 +287,8 @@ bool run_next_thread (action action)
  */
 void SIGVTALRM_handler (int sig)
 {
+  cout << "Running tid: " << running_thread->get_id() << "\n totals turns: " << total_turns << "\n";
+  flush (cout);
   run_next_thread (SCHEDULING);
 }
 
@@ -273,7 +302,7 @@ int init_helper (int quantum_usecs)
   if (sigaction (SIGVTALRM, &sa, NULL) < 0)
     {
       //todo: prints error
-      output_error(SYSTEM, SIGACTION_FAIL);
+      output_error (SYSTEM, SIGACTION_FAIL);
       exit (EXIT_FAILURE);
     }
 
@@ -289,7 +318,7 @@ int init_helper (int quantum_usecs)
   if (setitimer (ITIMER_VIRTUAL, &timer, NULL))
     {
       //todo: prints error
-      output_error(SYSTEM, TIMER_FAIL);
+      output_error (SYSTEM, TIMER_FAIL);
       exit (EXIT_FAILURE);
     }
   unmask_signals ();
@@ -315,7 +344,6 @@ bool is_valid_id (int tid)
   return true;
 
 }
-
 /**
  * @brief initializes the Thread library.
  *
@@ -339,6 +367,7 @@ int uthread_init (int quantum_usecs)
   unmask_signals ();
   return init_helper (quantum_usecs);
 }
+
 /**
  * @brief Creates a new Thread, whose entry point is the function entry_point with the signature
  * void entry_point(void).
@@ -356,7 +385,7 @@ int uthread_spawn (thread_entry_point entry_point)
   int next_available_id = get_next_id ();
   if (next_available_id == -1)
     {
-      output_error(SYSTEM, MAX_THREADS);
+      output_error (SYSTEM, MAX_THREADS);
       unmask_signals ();
       return -1;
     }
@@ -366,7 +395,6 @@ int uthread_spawn (thread_entry_point entry_point)
   unmask_signals ();
   return next_available_id;
 }
-
 void terminate_thread (int tid)
 {
   mask_signals ();
@@ -377,6 +405,7 @@ void terminate_thread (int tid)
   delete p_thread;
   unmask_signals ();
 }
+
 /**
  * @brief Terminates the Thread with ID tid and deletes it from all relevant control structures.
  *
@@ -401,12 +430,13 @@ int uthread_terminate (int tid)
 
   if (available_ids.count (tid))
     { //tid not assigned
-      output_error(THREAD_LIBRARY, NO_THREAD);
+      output_error (THREAD_LIBRARY, NO_THREAD);
       unmask_signals ();
       return -1;
     }
 
   if (tid == running_thread->get_id ()) //self-termination
+    //todo: test if this section is needed
     {
       terminate_thread (tid);
       if (!run_next_thread (TERMINATING))
@@ -420,14 +450,6 @@ int uthread_terminate (int tid)
   terminate_thread (tid);
   unmask_signals ();
   return 0;
-
-}
-
-
-void ready_to_blocked(Thread* thread){
-    ready_threads_list.remove(thread);
-    blocked_threads_list.push_back(thread);
-    thread->set_state (BLOCKED);
 
 }
 /**
@@ -444,7 +466,7 @@ int uthread_block (int tid)
   mask_signals ();
   if (!is_valid_id (tid))
     {
-      output_error(THREAD_LIBRARY, NO_THREAD);
+      output_error (THREAD_LIBRARY, NO_THREAD);
       unmask_signals ();
       return -1;
     }
@@ -455,9 +477,13 @@ int uthread_block (int tid)
     {
       if (curr_thread->get_state () == RUNNING)
         {
-          run_next_thread (SLEEPING);
+          // todo: test if run_next_thread can return 0;
+          run_next_thread (BLOCKING);
         }
-        ready_to_blocked(curr_thread);
+      else
+        {
+          ready_to_blocked (curr_thread);
+        }
 
       // todo blocking for number of seconds?
 
@@ -468,10 +494,13 @@ int uthread_block (int tid)
 
 }
 
-void blocked_to_ready(Thread* thread){
-    thread->set_state (READY);
-    ready_threads_list.push_back (thread);
-    blocked_threads_list.remove(thread);
+void blocked_to_ready (Thread * thread)
+{
+//  if (thread->get_state() == SLEEP) cout << total_turns << "********\n";
+//  flush (cout);
+  thread->set_state (READY);
+  ready_threads_list.push_back (thread);
+  blocked_threads_list.remove (thread);
 }
 
 /**
@@ -487,15 +516,16 @@ int uthread_resume (int tid)
   mask_signals ();
   if (!is_valid_id (tid))
     {
-      output_error(THREAD_LIBRARY, NO_THREAD);
+      output_error (THREAD_LIBRARY, NO_THREAD);
       unmask_signals ();
       return -1;
     }
 
   Thread *thread_to_resume = all_threads[tid];
-  if (thread_to_resume->get_state () == BLOCKED)
+  state state = thread_to_resume->get_state ();
+  if (state == BLOCKED || state == SLEEP)
     {
-      blocked_to_ready(thread_to_resume);
+      blocked_to_ready (thread_to_resume);
     }
   unmask_signals ();
 }
@@ -513,20 +543,28 @@ int uthread_resume (int tid)
 */
 int uthread_sleep (int num_quantums)
 {
-  string error_explanation;
-  if (uthread_get_tid() == 0){
-      error_explanation = MAIN_THREAD_SLEEP;
-  }
-  if (num_quantums <= 0){
-      error_explanation = NEGATIVE_SLEEP_SECONDS;
-  }
-
-  if (!error_explanation.empty()){
-      output_error(THREAD_LIBRARY, error_explanation);
-      return -1;
-  }
-
   mask_signals ();
+
+  string error_explanation;
+  if (uthread_get_tid () == 0)
+    {
+      error_explanation = MAIN_THREAD_SLEEP;
+    }
+  if (num_quantums <= 0)
+    {
+      error_explanation = NEGATIVE_SLEEP_SECONDS;
+    }
+
+  if (!error_explanation.empty ())
+    {
+      output_error (THREAD_LIBRARY, error_explanation);
+      unmask_signals ();
+      return -1;
+    }
+//  cout << total_turns << "********\n";
+//  flush (cout);
+  running_thread->set_quantums_to_wait (num_quantums);
+  run_next_thread (SLEEPING);
 
   unmask_signals ();
 }
@@ -565,12 +603,13 @@ int uthread_get_total_quantums ()
 */
 int uthread_get_quantums (int tid)
 {
-    if (all_threads.count(tid)){
-        return all_threads[tid]-> get_turns();
+  if (all_threads.count (tid))
+    {
+      return all_threads[tid]->get_turns ();
     }
 
-    output_error(THREAD_LIBRARY, NO_THREAD);
-    return -1;
+  output_error (THREAD_LIBRARY, NO_THREAD);
+  return -1;
 
 
 //    return all_threads.count (tid) ? all_threads[tid]->get_turns () : -1;
