@@ -223,6 +223,7 @@ int get_next_id ()
 
 void ready_to_blocked (Thread * thread)
 {
+  thread->save();
   ready_threads_list.remove (thread);
   blocked_threads_list.push_back (thread);
   thread->set_state (BLOCKED);
