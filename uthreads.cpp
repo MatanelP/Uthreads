@@ -147,7 +147,12 @@ class Thread {
     _quantumsToWait--;
     if (_quantumsToWait == 0)
       {
-        uthread_resume (_tid);
+        if (get_state() == SLEEP_BLOCKED){
+            set_state(BLOCKED);
+        }
+        else{
+            uthread_resume (_tid);
+        }
       }
   }
 } typedef Thread;
@@ -158,7 +163,7 @@ int total_turns;
 set<int> available_ids;
 list<Thread *> ready_threads_list;
 list<Thread *> sleeping_threads_list;
-list<Thread *> blocked_threads_list;
+//list<Thread *> blocked_threads_list;
 map<int, Thread *> all_threads;
 list<Thread *> threads_list;
 Thread *running_thread;
@@ -225,7 +230,7 @@ void ready_to_blocked (Thread * thread)
 {
   thread->save();
   ready_threads_list.remove (thread);
-  blocked_threads_list.push_back (thread);
+  //blocked_threads_list.push_back (thread);
   thread->set_state (BLOCKED);
 }
 
@@ -262,7 +267,6 @@ bool run_next_thread (action action)
     {
       case TERMINATING:break;
       case BLOCKING:ready_to_blocked (running_thread);
-
       break;
       case SLEEPING:running_thread->set_state (SLEEP);
       sleeping_threads_list.push_back (running_thread);
@@ -474,19 +478,22 @@ int uthread_block (int tid)
 
   auto it = all_threads.find (tid);
   Thread *curr_thread = it->second;
-  if (curr_thread->get_state () != BLOCKED)
+
+
+  if (curr_thread->get_state () != BLOCKED && curr_thread->get_state() != SLEEP_BLOCKED)
     {
       if (curr_thread->get_state () == RUNNING)
         {
           // todo: test if run_next_thread can return 0;
           run_next_thread (BLOCKING);
         }
-      else
+      else if (curr_thread->get_state() == SLEEP){
+          curr_thread->set_state(SLEEP_BLOCKED);
+      }
+      else // thread currently in ready state
         {
           ready_to_blocked (curr_thread);
         }
-
-      // todo blocking for number of seconds?
 
     }
 
@@ -501,7 +508,7 @@ void blocked_to_ready (Thread * thread)
 //  flush (cout);
   thread->set_state (READY);
   ready_threads_list.push_back (thread);
-  blocked_threads_list.remove (thread);
+  //blocked_threads_list.remove (thread);
 }
 
 /**
@@ -528,6 +535,11 @@ int uthread_resume (int tid)
     {
       blocked_to_ready (thread_to_resume);
     }
+  else if (state == SLEEP_BLOCKED){
+      // blocked, sleeping thread has been called to resume by another thread
+      // must remain in sleep
+      thread_to_resume->set_state(SLEEP);
+  }
   unmask_signals ();
 }
 
