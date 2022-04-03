@@ -24,6 +24,7 @@ typedef unsigned long address_t;
 #define ERROR_THREAD_LIBRARY "thread library error: "
 #define MAX_THREADS "maximum number of threads reached"
 #define NO_THREAD "specified thread does not exist"
+#define NO_READY_THREAD "no threads are available to run next"
 #define MAIN_THREAD_SLEEP "cannot put main thread to sleep"
 #define NEGATIVE_SLEEP_SECONDS "number of seconds must be greater than 0"
 #define TIMER_FAIL "memory allocation for timer failed"
@@ -163,7 +164,6 @@ int total_turns;
 set<int> available_ids;
 list<Thread *> ready_threads_list;
 list<Thread *> sleeping_threads_list;
-//list<Thread *> blocked_threads_list;
 map<int, Thread *> all_threads;
 list<Thread *> threads_list;
 Thread *running_thread;
@@ -194,7 +194,6 @@ void mask_signals ()
 {
   if (sigprocmask (SIG_BLOCK, &sa.sa_mask, nullptr) == -1)
     {
-      //todo printerror
       output_error (SYSTEM, MASKING_FAIL);
       exit (EXIT_FAILURE);
     }
@@ -204,7 +203,6 @@ void unmask_signals ()
 {
   if (sigprocmask (SIG_UNBLOCK, &sa.sa_mask, nullptr) == -1)
     {
-      //todo printerror
       output_error (SYSTEM, UNMASKING_FAIL);
       exit (EXIT_FAILURE);
     }
@@ -226,11 +224,13 @@ int get_next_id ()
   return nextId;
 }
 
+/**
+ * Helper function to move thread from ready to blocked state
+ */
 void ready_to_blocked (Thread * thread)
 {
   thread->save();
   ready_threads_list.remove (thread);
-  //blocked_threads_list.push_back (thread);
   thread->set_state (BLOCKED);
 }
 
@@ -306,7 +306,6 @@ int init_helper (int quantum_usecs)
   sa.sa_handler = &SIGVTALRM_handler;
   if (sigaction (SIGVTALRM, &sa, NULL) < 0)
     {
-      //todo: prints error
       output_error (SYSTEM, SIGACTION_FAIL);
       exit (EXIT_FAILURE);
     }
@@ -322,7 +321,6 @@ int init_helper (int quantum_usecs)
   // Start a virtual timer. It counts down whenever this process is executing.
   if (setitimer (ITIMER_VIRTUAL, &timer, NULL))
     {
-      //todo: prints error
       output_error (SYSTEM, TIMER_FAIL);
       exit (EXIT_FAILURE);
     }
@@ -446,7 +444,7 @@ int uthread_terminate (int tid)
       terminate_thread (tid);
       if (!run_next_thread (TERMINATING))
         {
-          //todo: print error.
+          output_error(SYSTEM, NO_READY_THREAD);
           unmask_signals ();
           return -1;
         }
@@ -502,13 +500,16 @@ int uthread_block (int tid)
 
 }
 
+
+/**
+ * Helper function to move thread from blocked to ready state
+ */
 void blocked_to_ready (Thread * thread)
 {
 //  if (thread->get_state() == SLEEP) cout << total_turns << "********\n";
 //  flush (cout);
   thread->set_state (READY);
   ready_threads_list.push_back (thread);
-  //blocked_threads_list.remove (thread);
 }
 
 /**
