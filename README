@@ -24,7 +24,11 @@ Part 1: Theoretical Questions -
         will be exhausted by the program (high RAM usage).
 
 
-    3.
+    3. We first have an external interrupt which is called from the keyboard.
+       The interrupt vector calls a handler to take care of this interrupt.
+       The kill command will then kill a single process at a time with the given process ID.
+       It sends a SIGTERM signal indicating for the process to stop.
+
 
     4. Virtual time is the time taken by the CPU to complete a task if there were no interruptions
        (I/O delays, scheduler time-outs etc). The unit of time is the memory reference time. For example,
