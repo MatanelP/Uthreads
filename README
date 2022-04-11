@@ -24,11 +24,27 @@ Part 1: Theoretical Questions -
         will be exhausted by the program (high RAM usage).
 
 
-    3.
+    3. We first have an external interrupt which is called from the keyboard.
+       The interrupt vector calls a handler to take care of this interrupt.
+       The kill command will then kill a single process at a time with the given process ID.
+       It sends a SIGTERM signal indicating for the process to stop.
 
-    4.
 
-    5.
+    4. Virtual time is the time taken by the CPU to complete a task if there were no interruptions
+       (I/O delays, scheduler time-outs etc). The unit of time is the memory reference time. For example,
+       if the CPU executes for virtual time {x}, then it generated {x} memory references.
+       To convert from virtual time to real time, we must know how long it takes to complete one (1) memory reference,
+       and then multiply the number of references by the conversion factor.
+
+    5. sigsetjmp() receives two parameters – (sigjmp_buf  env , int savemask )
+       The registers and stack environment are saved in env, to be later used by siglongjmp().
+       If savemask is != 0, the calling process’s scheduling parameters and signal mask are saved as well.
+       We are able to jump back to this code location and state using siglongjmp().
+       Sigsetjmp() returns 0 if returning directly, or a user-defined value if we just arrived using siglongjmp()
+       Siglongjmp() receives (sigjmp_buf env, int val) and jumps to the code location and restores CPU state in env.
+
+
+
 
 
 	
